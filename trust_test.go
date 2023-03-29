@@ -8,7 +8,9 @@ import (
 	"github.com/cucumber/godog"
 	"log"
 	_ "modernc.org/sqlite"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const path = "/Users/melbysjamsuddin/Documents/trust_test"
@@ -57,6 +59,7 @@ func insertAccount(account_number string, name string, balance int) {
 		"INSERT OR IGNORE INTO account_hub(account_hash, account_number) values('"+hashString(account_number)+"', '"+account_number+"');",
 		"INSERT INTO account_sat(hash, account_hash, name, balance) values('"+hashString(strings.Join([]string{account_number, name, fmt.Sprintf("%d", balance)}, "|"))+"', '"+hashString(account_number)+"', '"+name+"', "+fmt.Sprintf("%d", balance)+");",
 	)
+	time.Sleep(100 * time.Millisecond)
 }
 
 func insertCompany(code string, name string, gics string) {
@@ -90,9 +93,9 @@ func theTrustPortfolioSharesOfTheCompanyBecome(shareQuantity string) error {
 	return nil
 }
 
-func theTrustHasSomeSharesInTheTrustPortfolio() error {
+func theTrustHasSharesInTheTrustPortfolio(numShares int) error {
 	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
-	insertTrustCompanySat("shamsuddins", "AZJ", 10)
+	insertTrustCompanySat("shamsuddins", "AZJ", numShares)
 	return nil
 }
 
@@ -108,13 +111,25 @@ func theTrustHasInAccount(amount int, account string) error {
 	return nil
 }
 
-func theTrustSellsAllSharesOfTheCompanyThroughTheBroker(ctx context.Context) (context.Context, error) {
+func theTrustSharesOfTheCompanyThroughTheBroker(trade string, numShares int) error {
+	out, _ := strconv.Atoi(queryRow("SELECT share_quantity FROM party_hub trust JOIN trust_company_link on (trust_hash = trust.party_hash) JOIN company_hub USING (company_hash) JOIN trust_company_sat USING(trust_company_hash) ORDER BY trust_company_sat.load_time DESC LIMIT 1;"))
+
 	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
-	insertTrustCompanySat("shamsuddins", "AZJ", 0)
-	insertAccount("1", "shamsuddins cash", 100)
-	insertAccount("5", "shamsuddins cost", 1)
-	ctx = context.WithValue(ctx, trustCostAccountCtxKey{}, "5")
-	return context.WithValue(ctx, trustCashAccountCtxKey{}, "1"), nil
+
+	switch trade {
+	case "sells":
+		if out < numShares {
+			return fmt.Errorf("trying to sell shares more than owned")
+		}
+		insertTrustCompanySat("shamsuddins", "AZJ", out-numShares)
+		insertAccount("1", "shamsuddins cash", 100)
+		insertAccount("5", "shamsuddins cost", 1)
+	case "buys":
+		insertTrustCompanySat("shamsuddins", "AZJ", out+numShares)
+		insertAccount("1", "shamsuddins cash", 0)
+		insertAccount("5", "shamsuddins cost", 1)
+	}
+	return nil
 }
 
 func theTrustsAccountBecome(account, amount string) error {
@@ -141,15 +156,6 @@ func theCompanySharesShowUpInTheTrustPortfolio() error {
 		return fmt.Errorf("expected response to be: %s, but actual is: %s", "shamsuddins|AZJ", out)
 	}
 	return nil
-}
-
-func theTrustBuysSomeSharesOfTheCompanyThroughTheBroker(ctx context.Context) (context.Context, error) {
-	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
-	insertTrustCompanySat("shamsuddins", "AZJ", 10)
-	insertAccount("1", "shamsuddins cash", 0)
-	insertAccount("5", "shamsuddins cost", 1)
-	ctx = context.WithValue(ctx, trustCostAccountCtxKey{}, "5")
-	return context.WithValue(ctx, trustCashAccountCtxKey{}, "1"), nil
 }
 
 func theresACompanyInTheDatabase() error {
@@ -230,11 +236,10 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the company shares show up in the trust portfolio$`, theCompanySharesShowUpInTheTrustPortfolio)
 	ctx.Step(`^the person can be seen in the trust member list$`, thePersonCanBeSeenInTheTrustMemberList)
 	ctx.Step(`^the person is added to the trust$`, thePersonIsAddedToTheTrust)
-	ctx.Step(`^the trust buys some shares of the company through the broker$`, theTrustBuysSomeSharesOfTheCompanyThroughTheBroker)
 	ctx.Step(`^the trust has (\d+) in "([^"]*)" account$`, theTrustHasInAccount)
-	ctx.Step(`^the trust has some shares in the trust portfolio$`, theTrustHasSomeSharesInTheTrustPortfolio)
+	ctx.Step(`^the trust has (\d+) shares in the trust portfolio$`, theTrustHasSharesInTheTrustPortfolio)
 	ctx.Step(`^the trust portfolio shares of the company become "([^"]*)"$`, theTrustPortfolioSharesOfTheCompanyBecome)
-	ctx.Step(`^the trust sells all shares of the company through the broker$`, theTrustSellsAllSharesOfTheCompanyThroughTheBroker)
+	ctx.Step(`^the trust "([^"]*)" (\d+) shares of the company through the broker$`, theTrustSharesOfTheCompanyThroughTheBroker)
 	ctx.Step(`^the trust\'s "([^"]*)" account become "([^"]*)"$`, theTrustsAccountBecome)
 	ctx.Step(`^there\'s a broker in the database$`, theresABrokerInTheDatabase)
 
