@@ -84,6 +84,18 @@ func insertTrustCompanySat(trust string, company string, shareQuantity int) {
 	executeQueries("INSERT INTO trust_company_sat(hash, trust_company_hash, share_quantity) values('" + hashString(strings.Join([]string{trust, company, fmt.Sprintf("%d", shareQuantity)}, "|")) + "', '" + hashString(trust+"|"+company) + "', " + fmt.Sprintf("%d", shareQuantity) + ");")
 }
 
+func insertPersonTrustSat(person string, trust string, numUnit int) {
+	executeQueries("INSERT INTO person_trust_sat(hash, person_trust_hash, unit_quantity) values('" + hashString(strings.Join([]string{person, trust, fmt.Sprintf("%d", numUnit)}, "|")) + "', '" + hashString(person+"|"+trust) + "', " + fmt.Sprintf("%d", numUnit) + ");")
+}
+
+func theNAVPerUnitWillBeDollar(amount int) error {
+	out := getTrustNAV("shamsuddins")
+	if amount != out {
+		return fmt.Errorf("expected response to be: %d, but actual is: %d", amount, out)
+	}
+	return nil
+}
+
 func theTrustPortfolioSharesOfTheCompanyBecome(shareQuantity string) error {
 	out := queryRow("SELECT share_quantity FROM party_hub trust JOIN trust_company_link on (trust_hash = trust.party_hash) JOIN company_hub USING (company_hash) JOIN trust_company_sat USING(trust_company_hash) ORDER BY trust_company_sat.load_time DESC LIMIT 1;")
 
@@ -93,13 +105,20 @@ func theTrustPortfolioSharesOfTheCompanyBecome(shareQuantity string) error {
 	return nil
 }
 
+func getTrustNAV(trust string) int {
+	accountNumber := "1"
+	out, _ := strconv.Atoi(queryRow("SELECT account_sat.balance FROM trust_account_link JOIN account_hub USING(account_hash) JOIN account_sat USING(account_hash) WHERE account_hash = '" + hashString(accountNumber) + "' ORDER BY account_sat.load_time DESC LIMIT 1;"))
+
+	return out
+}
+
 func theTrustHasSharesInTheTrustPortfolio(numShares int) error {
 	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
 	insertTrustCompanySat("shamsuddins", "AZJ", numShares)
 	return nil
 }
 
-func theTrustHasInAccount(amount int, account string) error {
+func theTrustHasDollarInAccount(amount int, account string) error {
 	switch account {
 	case "cash":
 		insertLinkWithTwoHubs("trust_account_link", "shamsuddins", "1")
@@ -132,7 +151,7 @@ func theTrustSharesOfTheCompanyThroughTheBroker(trade string, numShares int) err
 	return nil
 }
 
-func theTrustsAccountBecome(account, amount string) error {
+func theTrustsAccountBecomeDollar(account, amount string) error {
 	var accountNumber string
 
 	switch account {
@@ -145,6 +164,15 @@ func theTrustsAccountBecome(account, amount string) error {
 
 	if strings.TrimRight(out, "\n") != amount {
 		return fmt.Errorf("expected response to be: %s, but actual is: %s", amount, out)
+	}
+	return nil
+}
+
+func theTrustWillHaveUnitOutstanding(numUnits int) error {
+	unitCount, _ := strconv.Atoi(queryRow("SELECT SUM(unit_quantity) FROM party_hub person JOIN person_trust_link ON (person_hash = person.party_hash) JOIN party_hub trust ON (trust_hash = trust.party_hash) JOIN (SELECT person_trust_hash, unit_quantity, load_time, RANK() OVER (PARTITION BY person_trust_hash ORDER BY load_time DESC) rank FROM person_trust_sat) ranked_person_trust_sat USING(person_trust_hash) WHERE rank = 1;"))
+
+	if unitCount != numUnits {
+		return fmt.Errorf("expected response to be: %d, but actual is: %d", numUnits, unitCount)
 	}
 	return nil
 }
@@ -172,6 +200,37 @@ func thePersonCanBeSeenInTheTrustMemberList(ctx context.Context) error {
 	return nil
 }
 
+func thePersonDollar(action string, amount int) error {
+	out, _ := strconv.Atoi(queryRow("SELECT unit_quantity FROM party_hub trust JOIN person_trust_link on (trust_hash = trust.party_hash) JOIN party_hub person ON (person_hash = person.party_hash) JOIN person_trust_sat USING(person_trust_hash) ORDER BY person_trust_sat.load_time DESC LIMIT 1;"))
+
+	insertLinkWithTwoHubs("person_trust_link", "melby", "shamsuddins")
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered from integer divide by zero panic", r)
+		}
+	}()
+	log.Printf("amount: %d nav: %d out: %d", amount, getTrustNAV("shamsuddins"), out)
+	numShares := 1
+
+	if getTrustNAV("shamsuddins") != 0 {
+		numShares = amount / getTrustNAV("shamsuddins")
+	}
+
+	switch action {
+	case "invest":
+		insertPersonTrustSat("melby", "shamsuddins", out+numShares)
+		insertAccount("1", "shamsuddins cash", amount)
+	case "redeem":
+		if out < numShares {
+			return fmt.Errorf("trying to sell shares more than owned")
+		}
+		insertPersonTrustSat("melby", "shamsuddins", out-numShares)
+		insertAccount("1", "shamsuddins cash", 0)
+	}
+	return nil
+}
+
 func thePersonIsAddedToTheTrust(ctx context.Context) error {
 	insertLinkWithTwoHubs(
 		"person_trust_link",
@@ -181,9 +240,29 @@ func thePersonIsAddedToTheTrust(ctx context.Context) error {
 	return nil
 }
 
+func thePersonOwnsUnitInTheTrust(numUnits int) error {
+	insertLinkWithTwoHubs("person_trust_link", "melby", "shamsuddins")
+	insertPersonTrustSat("melby", "shamsuddins", numUnits)
+	return nil
+}
+
+func thePersonWillHaveUnitInTheTrust(numUnits int) error {
+	out, _ := strconv.Atoi(queryRow("SELECT unit_quantity FROM party_hub person JOIN person_trust_link ON (person_hash = person.party_hash) JOIN party_hub trust ON (trust_hash = trust.party_hash) JOIN person_trust_sat USING(person_trust_hash) ORDER BY person_trust_sat.load_time DESC LIMIT 1;"))
+
+	if out != numUnits {
+		return fmt.Errorf("expected response to be: %d, but actual is: %d", numUnits, out)
+	}
+	return nil
+}
+
 func theresAPersonInTheDatabase(ctx context.Context) (context.Context, error) {
 	insertParty("melby", "trustee")
 	return context.WithValue(ctx, personCtxKey{}, "melby"), nil
+}
+
+func theresAPersonInTheTrust(ctx context.Context) error {
+	_, _ = theresAPersonInTheDatabase(ctx)
+	return thePersonIsAddedToTheTrust(ctx)
 }
 
 func theresATrustInTheDatabase(ctx context.Context) (context.Context, error) {
@@ -225,6 +304,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 			"DELETE FROM party_hub;",
 			"DELETE FROM party_sat;",
 			"DELETE FROM person_trust_link;",
+			"DELETE FROM person_trust_sat;",
 			"DELETE FROM trust_account_link;",
 			"DELETE FROM trust_company_link;",
 			"DELETE FROM trust_company_sat;",
@@ -234,17 +314,22 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the broker can be seen in the trust broker list$`, theBrokerCanBeSeenInTheTrustBrokerList)
 	ctx.Step(`^the broker is added to the trust$`, theBrokerIsAddedToTheTrust)
 	ctx.Step(`^the company shares show up in the trust portfolio$`, theCompanySharesShowUpInTheTrustPortfolio)
+	ctx.Step(`^the NAV per unit will be (\d+) dollar$`, theNAVPerUnitWillBeDollar)
 	ctx.Step(`^the person can be seen in the trust member list$`, thePersonCanBeSeenInTheTrustMemberList)
+	ctx.Step(`^the person "([^"]*)" (\d+) dollar$`, thePersonDollar)
 	ctx.Step(`^the person is added to the trust$`, thePersonIsAddedToTheTrust)
-	ctx.Step(`^the trust has (\d+) in "([^"]*)" account$`, theTrustHasInAccount)
+	ctx.Step(`^the person owns (\d+) unit in the trust$`, thePersonOwnsUnitInTheTrust)
+	ctx.Step(`^the person will have (\d+) unit in the trust$`, thePersonWillHaveUnitInTheTrust)
+	ctx.Step(`^the trust "([^"]*)" (\d+) shares of the company through the broker$`, theTrustSharesOfTheCompanyThroughTheBroker)
+	ctx.Step(`^the trust has (\d+) dollar in "([^"]*)" account$`, theTrustHasDollarInAccount)
 	ctx.Step(`^the trust has (\d+) shares in the trust portfolio$`, theTrustHasSharesInTheTrustPortfolio)
 	ctx.Step(`^the trust portfolio shares of the company become "([^"]*)"$`, theTrustPortfolioSharesOfTheCompanyBecome)
-	ctx.Step(`^the trust "([^"]*)" (\d+) shares of the company through the broker$`, theTrustSharesOfTheCompanyThroughTheBroker)
-	ctx.Step(`^the trust\'s "([^"]*)" account become "([^"]*)"$`, theTrustsAccountBecome)
+	ctx.Step(`^the trust will have (\d+) unit outstanding$`, theTrustWillHaveUnitOutstanding)
+	ctx.Step(`^the trust\'s "([^"]*)" account become (\d+) dollar$`, theTrustsAccountBecomeDollar)
 	ctx.Step(`^there\'s a broker in the database$`, theresABrokerInTheDatabase)
-
 	ctx.Step(`^there\'s a company in the database$`, theresACompanyInTheDatabase)
 	ctx.Step(`^there\'s a person in the database$`, theresAPersonInTheDatabase)
+	ctx.Step(`^there\'s a person in the trust$`, theresAPersonInTheTrust)
 	ctx.Step(`^there\'s a trust in the database$`, theresATrustInTheDatabase)
 }
 
@@ -268,6 +353,7 @@ func FeatureContext(s *godog.TestSuiteContext) {
 			"CREATE TABLE IF NOT EXISTS trust_account_link(trust_account_hash text unique, trust_hash text, account_hash text, load_time timestamp);",
 			"CREATE TABLE IF NOT EXISTS trust_company_link(trust_company_hash text unique, trust_hash text, company_hash text, load_time timestamp);",
 			"CREATE TABLE IF NOT EXISTS trust_company_sat(hash text unique, trust_company_hash text, share_quantity int, load_time timestamp DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')));",
+			"CREATE TABLE person_trust_sat(hash text unique, person_trust_hash text, unit_quantity int, load_time timestamp DEFAULT(STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')));",
 		)
 	})
 }
