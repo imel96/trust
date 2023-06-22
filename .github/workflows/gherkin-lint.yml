@@ -1,0 +1,2 @@
+- name: Gherkin Linter
+  uses: restqa/gherkin-linter-action@0.0.1
