@@ -35,6 +35,7 @@ func queryRow(sql string) string {
 	}
 	err := Db.QueryRow(sql).Scan(&out)
 	if err != nil {
+		log.Fatal(err)
 		return "error"
 	}
 	return out
@@ -96,19 +97,31 @@ func theNAVPerUnitWillBeDollar(amount int) error {
 	return nil
 }
 
-func theTrustPortfolioSharesOfTheCompanyBecome(shareQuantity string) error {
-	out := queryRow("SELECT share_quantity FROM party_hub trust JOIN trust_company_link on (trust_hash = trust.party_hash) JOIN company_hub USING (company_hash) JOIN trust_company_sat USING(trust_company_hash) ORDER BY trust_company_sat.load_time DESC LIMIT 1;")
-
+func theTrustPortfolioSharesOfBecome(code string, shareQuantity int) error {
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT share_quantity
+		FROM party_hub trust
+		JOIN trust_company_link ON (trust_hash = trust.party_hash)
+		JOIN company_hub USING (company_hash)
+		JOIN trust_company_sat USING(trust_company_hash)
+		ORDER BY trust_company_sat.load_time DESC LIMIT 1;
+	`))
 	if out != shareQuantity {
-		return fmt.Errorf("expected response to be: %s, but actual is: %s", shareQuantity, out)
+		return fmt.Errorf("expected response to be: %d, but actual is: %d", shareQuantity, out)
 	}
 	return nil
 }
 
 func getTrustNAV(trust string) int {
 	accountNumber := "1"
-	out, _ := strconv.Atoi(queryRow("SELECT account_sat.balance FROM trust_account_link JOIN account_hub USING(account_hash) JOIN account_sat USING(account_hash) WHERE account_hash = '" + hashString(accountNumber) + "' ORDER BY account_sat.load_time DESC LIMIT 1;"))
-
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT account_sat.balance
+		FROM trust_account_link
+		JOIN account_hub USING(account_hash)
+		JOIN account_sat USING(account_hash)
+		WHERE account_hash = '` + hashString(accountNumber) + `'
+		ORDER BY account_sat.load_time DESC LIMIT 1;
+	`))
 	return out
 }
 
@@ -126,25 +139,35 @@ func theTrustHasDollarInAccount(amount int, account string) error {
 	case "cost":
 		insertLinkWithTwoHubs("trust_account_link", "shamsuddins", "5")
 		insertAccount("5", "shamsuddins cost", amount)
+	case "income":
+		insertLinkWithTwoHubs("trust_account_link", "shamsuddins", "4")
+		insertAccount("4", "shamsuddins income", amount)
 	}
 	return nil
 }
 
-func theTrustSharesOfTheCompanyThroughTheBroker(trade string, numShares int) error {
-	out, _ := strconv.Atoi(queryRow("SELECT share_quantity FROM party_hub trust JOIN trust_company_link on (trust_hash = trust.party_hash) JOIN company_hub USING (company_hash) JOIN trust_company_sat USING(trust_company_hash) ORDER BY trust_company_sat.load_time DESC LIMIT 1;"))
-
-	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
+func theTrustSharesOfThroughTheBroker(trade string, numShares int, code string) error {
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT share_quantity
+		FROM party_hub trust
+		JOIN trust_company_link ON (trust_hash = trust.party_hash)
+		JOIN company_hub USING (company_hash)
+		JOIN trust_company_sat USING(trust_company_hash)
+		ORDER BY trust_company_sat.load_time DESC LIMIT 1;
+	`))
 
 	switch trade {
 	case "sells":
 		if out < numShares {
 			return fmt.Errorf("trying to sell shares more than owned")
 		}
-		insertTrustCompanySat("shamsuddins", "AZJ", out-numShares)
+		insertTrustCompanySat("shamsuddins", code, out-numShares)
+// should be share price & number of shares
 		insertAccount("1", "shamsuddins cash", 100)
 		insertAccount("5", "shamsuddins cost", 1)
 	case "buys":
-		insertTrustCompanySat("shamsuddins", "AZJ", out+numShares)
+		insertLinkWithTwoHubs("trust_company_link", "shamsuddins", code)
+		insertTrustCompanySat("shamsuddins", code, out+numShares)
 		insertAccount("1", "shamsuddins cash", 0)
 		insertAccount("5", "shamsuddins cost", 1)
 	}
@@ -159,9 +182,17 @@ func theTrustsAccountBecomeDollar(account, amount string) error {
 		accountNumber = "1"
 	case "cost":
 		accountNumber = "5"
+	case "income":
+		accountNumber = "4"
 	}
-	out := queryRow("SELECT account_sat.balance FROM trust_account_link JOIN account_hub USING(account_hash) JOIN account_sat USING(account_hash) WHERE account_hash = '" + hashString(accountNumber) + "' ORDER BY account_sat.load_time DESC LIMIT 1;")
-
+	out := queryRow(`
+		SELECT account_sat.balance
+		FROM trust_account_link
+		JOIN account_hub USING(account_hash)
+		JOIN account_sat USING(account_hash)
+		WHERE account_hash = '` + hashString(accountNumber) + `'
+		ORDER BY account_sat.load_time DESC LIMIT 1;
+	`)
 	if strings.TrimRight(out, "\n") != amount {
 		return fmt.Errorf("expected response to be: %s, but actual is: %s", amount, out)
 	}
@@ -169,7 +200,19 @@ func theTrustsAccountBecomeDollar(account, amount string) error {
 }
 
 func theTrustWillHaveUnitOutstanding(numUnits int) error {
-	unitCount, _ := strconv.Atoi(queryRow("SELECT SUM(unit_quantity) FROM party_hub person JOIN person_trust_link ON (person_hash = person.party_hash) JOIN party_hub trust ON (trust_hash = trust.party_hash) JOIN (SELECT person_trust_hash, unit_quantity, load_time, RANK() OVER (PARTITION BY person_trust_hash ORDER BY load_time DESC) rank FROM person_trust_sat) ranked_person_trust_sat USING(person_trust_hash) WHERE rank = 1;"))
+	unitCount, _ := strconv.Atoi(queryRow(`
+		SELECT SUM(unit_quantity)
+		FROM party_hub person
+		JOIN person_trust_link ON (person_hash = person.party_hash)
+		JOIN party_hub trust ON (trust_hash = trust.party_hash)
+		JOIN (
+			SELECT person_trust_hash, unit_quantity, load_time, RANK() OVER (
+				PARTITION BY person_trust_hash ORDER BY load_time DESC
+			) rank
+			FROM person_trust_sat
+		) ranked_person_trust_sat USING(person_trust_hash)
+		WHERE rank = 1;
+	`))
 
 	if unitCount != numUnits {
 		return fmt.Errorf("expected response to be: %d, but actual is: %d", numUnits, unitCount)
@@ -177,11 +220,33 @@ func theTrustWillHaveUnitOutstanding(numUnits int) error {
 	return nil
 }
 
-func theCompanySharesShowUpInTheTrustPortfolio() error {
-	out := queryRow("SELECT trust.name || \"|\" || company_hub.code FROM party_hub trust JOIN trust_company_link on (trust_hash = trust.party_hash) JOIN company_hub USING (company_hash);")
+func theCompanyPaysDividendOfCentsPerShare(dividend int) error {
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT share_quantity
+		FROM party_hub trust
+		JOIN trust_company_link ON (trust_hash = trust.party_hash)
+		JOIN company_hub USING (company_hash)
+		JOIN trust_company_sat USING(trust_company_hash)
+		ORDER BY trust_company_sat.load_time DESC LIMIT 1;
+	`))
+//	insertLinkWithTwoHubs("trust_company_link", "shamsuddins", "AZJ")
+//		insertTrustCompanySat("shamsuddins", "AZJ", out+numShares)
+		insertAccount("1", "shamsuddins cash", dividend * out / 100)
+		insertAccount("4", "shamsuddins income", dividend * out / 100)
 
-	if strings.TrimRight(out, "\n") != "shamsuddins|AZJ" {
-		return fmt.Errorf("expected response to be: %s, but actual is: %s", "shamsuddins|AZJ", out)
+//		insertAccount("5", "shamsuddins cost", 1)
+	return nil
+}
+
+func sharesShowUpInTheTrustPortfolio(code string) error {
+	out := queryRow(`
+		SELECT trust.name || "|" || company_hub.code
+		FROM party_hub trust
+		JOIN trust_company_link ON (trust_hash = trust.party_hash)
+		JOIN company_hub USING (company_hash);
+	`)
+	if strings.TrimRight(out, "\n") != "shamsuddins|"+code {
+		return fmt.Errorf("expected response to be: %s, but actual is: %s", "shamsuddins|"+code, out)
 	}
 	return nil
 }
@@ -192,8 +257,12 @@ func theresACompanyInTheDatabase() error {
 }
 
 func thePersonCanBeSeenInTheTrustMemberList(ctx context.Context) error {
-	out := queryRow("SELECT person.name || \"|\" || trust.name FROM party_hub person JOIN person_trust_link on (person_hash = person.party_hash) JOIN party_hub trust on (trust_hash = trust.party_hash);")
-
+	out := queryRow(`
+		SELECT person.name || "|" || trust.name
+		FROM party_hub person
+		JOIN person_trust_link ON (person_hash = person.party_hash)
+		JOIN party_hub trust ON (trust_hash = trust.party_hash);
+	`)
 	if strings.TrimRight(out, "\n") != "melby|shamsuddins" {
 		return fmt.Errorf("expected response to be: %s, but actual is: %s", "melbys|shamsuddins", out)
 	}
@@ -201,8 +270,14 @@ func thePersonCanBeSeenInTheTrustMemberList(ctx context.Context) error {
 }
 
 func thePersonDollar(action string, amount int) error {
-	out, _ := strconv.Atoi(queryRow("SELECT unit_quantity FROM party_hub trust JOIN person_trust_link on (trust_hash = trust.party_hash) JOIN party_hub person ON (person_hash = person.party_hash) JOIN person_trust_sat USING(person_trust_hash) ORDER BY person_trust_sat.load_time DESC LIMIT 1;"))
-
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT unit_quantity
+		FROM party_hub trust
+		JOIN person_trust_link ON (trust_hash = trust.party_hash)
+		JOIN party_hub person ON (person_hash = person.party_hash)
+		JOIN person_trust_sat USING(person_trust_hash)
+		ORDER BY person_trust_sat.load_time DESC LIMIT 1;
+	`))
 	insertLinkWithTwoHubs("person_trust_link", "melby", "shamsuddins")
 
 	defer func() {
@@ -210,7 +285,9 @@ func thePersonDollar(action string, amount int) error {
 			fmt.Println("Recovered from integer divide by zero panic", r)
 		}
 	}()
-	log.Printf("amount: %d nav: %d out: %d", amount, getTrustNAV("shamsuddins"), out)
+	if debug {
+		log.Printf("amount: %d nav: %d out: %d", amount, getTrustNAV("shamsuddins"), out)
+	}
 	numShares := 1
 
 	if getTrustNAV("shamsuddins") != 0 {
@@ -247,8 +324,14 @@ func thePersonOwnsUnitInTheTrust(numUnits int) error {
 }
 
 func thePersonWillHaveUnitInTheTrust(numUnits int) error {
-	out, _ := strconv.Atoi(queryRow("SELECT unit_quantity FROM party_hub person JOIN person_trust_link ON (person_hash = person.party_hash) JOIN party_hub trust ON (trust_hash = trust.party_hash) JOIN person_trust_sat USING(person_trust_hash) ORDER BY person_trust_sat.load_time DESC LIMIT 1;"))
-
+	out, _ := strconv.Atoi(queryRow(`
+		SELECT unit_quantity
+		FROM party_hub person
+		JOIN person_trust_link ON (person_hash = person.party_hash)
+		JOIN party_hub trust ON (trust_hash = trust.party_hash)
+		JOIN person_trust_sat USING(person_trust_hash)
+		ORDER BY person_trust_sat.load_time DESC LIMIT 1;
+	`))
 	if out != numUnits {
 		return fmt.Errorf("expected response to be: %d, but actual is: %d", numUnits, out)
 	}
@@ -271,8 +354,12 @@ func theresATrustInTheDatabase(ctx context.Context) (context.Context, error) {
 }
 
 func theBrokerCanBeSeenInTheTrustBrokerList(ctx context.Context) error {
-	out := queryRow("SELECT broker.name || \"|\" || trust.name FROM party_hub broker JOIN broker_trust_link on (broker_hash = broker.party_hash) JOIN party_hub trust on (trust_hash = trust.party_hash);")
-
+	out := queryRow(`
+		SELECT broker.name || "|" || trust.name
+		FROM party_hub broker
+		JOIN broker_trust_link ON (broker_hash = broker.party_hash)
+		JOIN party_hub trust ON (trust_hash = trust.party_hash);
+	`)
 	if strings.TrimRight(out, "\n") != "cmcmarkets|shamsuddins" {
 		return fmt.Errorf("expected response to be: %s, but actual is: %s", "cmcmarkets|shamsuddins", out)
 	}
@@ -313,17 +400,19 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	})
 	ctx.Step(`^the broker can be seen in the trust broker list$`, theBrokerCanBeSeenInTheTrustBrokerList)
 	ctx.Step(`^the broker is added to the trust$`, theBrokerIsAddedToTheTrust)
-	ctx.Step(`^the company shares show up in the trust portfolio$`, theCompanySharesShowUpInTheTrustPortfolio)
+	ctx.Step(`^the company pays dividend of (\d+) cents per share$`, theCompanyPaysDividendOfCentsPerShare)
+	ctx.Step(`^"([^"]*)" shares show up in the trust portfolio$`, sharesShowUpInTheTrustPortfolio)
 	ctx.Step(`^the NAV per unit will be (\d+) dollar$`, theNAVPerUnitWillBeDollar)
 	ctx.Step(`^the person can be seen in the trust member list$`, thePersonCanBeSeenInTheTrustMemberList)
 	ctx.Step(`^the person "([^"]*)" (\d+) dollar$`, thePersonDollar)
 	ctx.Step(`^the person is added to the trust$`, thePersonIsAddedToTheTrust)
 	ctx.Step(`^the person owns (\d+) unit in the trust$`, thePersonOwnsUnitInTheTrust)
 	ctx.Step(`^the person will have (\d+) unit in the trust$`, thePersonWillHaveUnitInTheTrust)
-	ctx.Step(`^the trust "([^"]*)" (\d+) shares of the company through the broker$`, theTrustSharesOfTheCompanyThroughTheBroker)
+	ctx.Step(`^the trust "([^"]*)" (\d+) shares of "([^"]*)" through the broker$`, 
+theTrustSharesOfThroughTheBroker)
 	ctx.Step(`^the trust has (\d+) dollar in "([^"]*)" account$`, theTrustHasDollarInAccount)
 	ctx.Step(`^the trust has (\d+) shares in the trust portfolio$`, theTrustHasSharesInTheTrustPortfolio)
-	ctx.Step(`^the trust portfolio shares of the company become "([^"]*)"$`, theTrustPortfolioSharesOfTheCompanyBecome)
+	ctx.Step(`^the trust portfolio shares of "([^"]*)" become (\d+)$`, theTrustPortfolioSharesOfBecome)
 	ctx.Step(`^the trust will have (\d+) unit outstanding$`, theTrustWillHaveUnitOutstanding)
 	ctx.Step(`^the trust\'s "([^"]*)" account become (\d+) dollar$`, theTrustsAccountBecomeDollar)
 	ctx.Step(`^there\'s a broker in the database$`, theresABrokerInTheDatabase)
