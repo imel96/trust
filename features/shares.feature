@@ -11,8 +11,9 @@ Feature: Shares management
       And there's a company in the database
     When the trust "buys" 10 shares of "BHP" through the broker
     Then "BHP" shares show up in the trust portfolio
-      And the trust's "cash" account become 0 dollar
-      And the trust's "cost" account become 1 dollar
+      And the trust "shares" account becomes 100 dollar
+      And the trust "cash" account becomes 0 dollar
+      And the trust "cost" account becomes 1 dollar
 
   Scenario: Sell shares
 
@@ -21,8 +22,10 @@ Feature: Shares management
       And the trust has 0 dollar in "cash" account
       And the trust has 0 dollar in "cost" account
       And the trust has 10 shares in the trust portfolio
+      And the trust has 100 dollar in "shares" account
       And there's a company in the database
     When the trust "sells" 10 shares of "BHP" through the broker
-    Then the trust portfolio shares of "BHP" become 0
-      And the trust's "cash" account become 100 dollar
-      And the trust's "cost" account become 1 dollar
+    Then the trust portfolio shares of "BHP" becomes 0
+      And the trust "cash" account becomes 99 dollar
+      And the trust "cost" account becomes 1 dollar
+      And the trust "shares" account becomes 0 dollar
