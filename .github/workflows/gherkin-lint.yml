@@ -1,2 +1,12 @@
-- name: Gherkin Linter
-  uses: restqa/gherkin-linter-action@0.0.1
+on: [push]
+
+jobs:
+  Gherkin-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Gherkin Linter
+    - uses: actions/checkout@v6
+    - uses: restqa/gherkin-linter-action@0.0.1
+      with:
+        path: 'features/'
+#        config_file: 'test/.gherkin-lintrc'
