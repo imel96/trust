@@ -4,9 +4,11 @@ jobs:
   Gherkin-lint:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
     - name: Gherkin Linter
-    - uses: actions/checkout@v6
-    - uses: restqa/gherkin-linter-action@0.0.1
+      uses: restqa/gherkin-linter-action@0.0.1
       with:
         path: 'features/'
 #        config_file: 'test/.gherkin-lintrc'
