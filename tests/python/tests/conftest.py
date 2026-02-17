@@ -57,7 +57,6 @@ def trust_has_shares(n):
     portfolio = payload.get('portfolio',{})
     portfolio['BHP'] = n
     payload['portfolio'] = portfolio
-    print("conftest.py", payload)
     r = requests.post(f"{BASE}/entities/trust", json=payload)
     assert r.status_code == 200
 

@@ -17,9 +17,9 @@ def set_account(amount, account):
     payload[account] = float(amount)
     requests.post(f"{BASE}/entities/trust", json=payload)
 
-@given("there's a company in the database")
-def company_exists():
-    r = requests.post(f"{BASE}/entities/company", json={"name": "BHP"})
+@given(parsers.parse('the company "{code}" is on the market'))
+def company_exists(code):
+    r = requests.post(f"{BASE}/entities/company", json={"name": code})
     assert r.status_code == 200
 
 @when(parsers.parse('the company pays dividend of {dollar:g} dollar per share'))
