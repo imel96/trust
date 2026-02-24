@@ -15,7 +15,7 @@ Feature: Investing Activities
     Then "BHP" shares show up in the trust portfolio
       And the trust "cash" account becomes 0 dollar
       And the trust "shares" account becomes 100 dollar
-      And the trust "cost" account becomes -1 dollar
+      And the trust "cost" account becomes 1 dollar
       And the total "Investing" cash flow will be -100 dollar
 
   Scenario: Sell shares
@@ -30,6 +30,6 @@ Feature: Investing Activities
     When the trust "sells" 10 shares of "BHP" through the broker
     Then the trust portfolio shares of "BHP" becomes 0
       And the trust "cash" account becomes 99 dollar
-      And the trust "cost" account becomes -1 dollar
+      And the trust "cost" account becomes 1 dollar
       And the trust "shares" account becomes 0 dollar
       And the total "Investing" cash flow will be 100 dollar

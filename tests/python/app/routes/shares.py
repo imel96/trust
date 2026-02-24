@@ -23,13 +23,8 @@ def buy_shares(code: str, qty: int, price: float=10.0):
         raise HTTPException(status_code=400, detail='No trust found')
     payload = tp.payload
     total_price = qty * price
-    payload['cash'] = payload.get('cash',0.0) - total_price - commission
-    payload['cost'] = payload.get('cost',0.0) - commission
-    payload['shares'] = total_price
-    portfolio = payload.get('portfolio',{})
-    portfolio[code] = portfolio.get(code, 0) + qty
-    payload['transactions'] = create_transactions_payload(tp.payload, code, qty, price, total_price)
-    payload['portfolio'] = portfolio
+    payload['transactions'] = create_transactions_payload(payload['transactions'], code, qty, price, -total_price, 'cash', 'shares')
+    payload['transactions'] = create_transactions_payload(payload['transactions'], None, 0, 0, -commission, 'cash', 'cost')
     client.upsert(collection_name='trusts', points=[{'id': tp.id, 'vector': embed_text(payload.get('text','')), 'payload': payload}])
     return SimpleResponse(ok=True, detail='bought')
 
@@ -41,27 +36,26 @@ def sell_shares(code: str, qty: int, price: float=10.0):
     if not tp:
         raise HTTPException(status_code=400, detail='No trust found')
     payload = tp.payload
+    # XXX
     portfolio = payload.get('portfolio',{})
     current = portfolio.get(code,0)
-    if current < qty:
+    if current['units'] < qty:
         raise HTTPException(status_code=400, detail='Not enough shares')
-    portfolio[code] = current - qty
+    # /XXX
     total_price = qty * price
-    payload['portfolio'] = portfolio
-    payload['cost'] = payload.get('cost', 0.0) - commission
-    payload['cash'] = payload.get('cash', 0.0) + total_price - commission
-    payload['shares'] = payload.get('shares',0.0) - total_price
-    payload['transactions'] = create_transactions_payload(tp.payload, code, -qty, price, total_price)
+    payload['transactions'] = create_transactions_payload(payload['transactions'], code, -qty, price, total_price, 'cash', 'shares')
+    payload['transactions'] = create_transactions_payload(payload['transactions'], None, 0, 0, -commission, 'cash', 'cost')
     client.upsert(collection_name='trusts', points=[{'id': tp.id, 'vector': embed_text(payload.get('text','')), 'payload': payload}])
     return SimpleResponse(ok=True, detail='sold')
 
-def create_transactions_payload(payload: dict, security: str, units: int, price_per_unit: float, amount: float) -> dict:
-    transactions = payload.get('transactions', [])
+def create_transactions_payload(transactions: list, security: str, units: int, price_per_unit: float, amount: float, cash_account: str, offset_account: str) -> list:
     transactions.append({
         'transaction_date': datetime.now(),
         'security': security,
         'units': units,
         'price_per_unit': Decimal(price_per_unit),
-        'amount': Decimal(amount)
+        'amount': Decimal(amount),
+        'cash_account': cash_account,
+        'offset_account': offset_account,
     })
     return transactions

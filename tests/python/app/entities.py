@@ -12,7 +12,8 @@ class Transaction(BaseModel):
     price_per_unit: Optional[Decimal] = Decimal("0")
     amount: Optional[Decimal] = Decimal("0")
     franking_credit: Optional[Decimal] = Decimal("0")
-    cash_flow: Optional[str] = None
+    cash_account: str
+    offset_account: Optional[str] = None
 
 class TrustIn(BaseModel):
     id: Optional[str] = None

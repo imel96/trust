@@ -55,8 +55,7 @@ def broker_exists():
 def trust_has_shares(n):
     payload = get_trust_payload()
     portfolio = payload.get('portfolio',{})
-    portfolio['BHP'] = n
-    payload['portfolio'] = portfolio
+    portfolio['BHP'] = {'units': n, 'price_per_unit': 10.0}
     r = requests.post(f"{BASE}/entities/trust", json=payload)
     assert r.status_code == 200
 

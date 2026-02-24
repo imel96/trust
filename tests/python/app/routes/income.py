@@ -1,3 +1,4 @@
+from app.services.accounting import *
 from fastapi import APIRouter, HTTPException
 from app.qdrant_client import get_client, ensure_collection
 from app.rag_utils import embed_text
@@ -19,8 +20,7 @@ def pay_dividend(dollar_per_share: float):
     if not tp:
         raise HTTPException(status_code=400, detail='No trust found')
     payload = tp.payload
-    portfolio = payload.get('portfolio', {})
-    total_shares = sum(portfolio.values()) if portfolio else 0
+    total_shares = security_balance(payload['transactions'], 'BHP')
     amount = total_shares * dollar_per_share
     payload['income'] = payload.get('income', 0.0) + amount
     payload['cash'] = payload.get('cash', 0.0) + amount

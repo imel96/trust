@@ -1,4 +1,4 @@
-from app.services.accounting import total_cash_flow_type
+from app.services.accounting import *
 from decimal import Decimal
 from pytest_bdd import scenarios, given, when, then, parsers
 import requests
@@ -12,7 +12,6 @@ BASE = 'http://localhost:8000'
 def set_account(amount, account):
     payload = get_trust_payload()
     payload[account] = float(amount)
-    print(account, amount, payload)
     requests.post(f"{BASE}/entities/trust", json=payload)
 
 @given(parsers.parse('the company "{code}" is on the market'))
@@ -31,18 +30,17 @@ def trade(action, qty, code):
 @then(parsers.parse('"{code}" shares show up in the trust portfolio'))
 def check_portfolio(code):
     payload = get_trust_payload()
-    print(payload)
-    assert code in payload["portfolio"], f"{code} not in portfolio"
+    assert security_balance(payload['transactions'], code) != 0, f"{code} not in portfolio"
 
 @then(parsers.parse('the trust portfolio shares of "{code}" becomes {qty:d}'))
 def check_portfolio_qty(code, qty):
     payload = get_trust_payload()
-    assert payload["portfolio"].get(code, 0) == qty
+    assert security_balance(payload['transactions'], code) == qty
 
 @then(parsers.parse('the trust "{account}" account becomes {amount:d} dollar'))
 def check_account(account, amount):
     payload = get_trust_payload()
-    assert round(payload[account], 2) == float(amount)
+    assert sum_account(payload['transactions'], account) == Decimal(amount)
 
 @then(parsers.parse('the total "{cash_flow}" cash flow will be {amount:d} dollar'))
 def check_account(cash_flow, amount):

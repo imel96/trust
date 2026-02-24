@@ -1,3 +1,6 @@
+from app.services.accounting import *
+from datetime import datetime
+from decimal import Decimal
 from fastapi import APIRouter
 from app.entities import TrustIn, PersonIn, BrokerIn, CompanyIn, SimpleResponse
 from app.qdrant_client import get_client, ensure_collection
@@ -13,12 +16,30 @@ def _store(collection, payload):
     payload['id'] = uid
     vector = embed_text(payload.get('text',''))
     client.upsert(collection_name=collection, points=[{'id': uid, 'vector': vector, 'payload': payload}])
-    pts, _ = client.scroll(collection_name='trusts', limit=1)
     return uid
+
+def _get_trust_point(client):
+    ensure_collection('trusts')
+    pts, _ = client.scroll(collection_name='trusts', limit=1)
+    if pts:
+        return pts[0]
+    return None
 
 @router.post('/trust', response_model=SimpleResponse)
 def create_trust(trust: TrustIn):
-    payload = {'id': trust.id or None, 'name': trust.name, 'cash': trust.cash, 'income': 0.0, 'cost': 0.0, 'portfolio': trust.portfolio, 'members': [], 'brokers': [], 'units_outstanding':0, 'nav_per_unit':0.0, 'shares': trust.shares, 'text': f"trust:{trust.name}"}
+    tp = _get_trust_point(get_client())
+    transactions = []
+
+    if tp:
+        transactions = tp.payload['transactions']
+    if trust.cash != 0:
+        transactions = create_transactions_payload(transactions, trust.cash, 'cash', None, 0)
+    if trust.shares != 0:
+        transactions = create_transactions_payload(transactions, trust.shares, 'shares', None, 0)
+    if trust.portfolio != {}:
+        for security, asset in trust.portfolio.items():
+            transactions = create_transactions_payload(transactions, 0, None, security, asset['units'])
+    payload = {'id': trust.id or None, 'name': trust.name, 'income': 0.0, 'cost': 0.0, 'portfolio': trust.portfolio, 'members': [], 'brokers': [], 'text': f"trust:{trust.name}", 'transactions': transactions}
     uid = _store('trusts', payload)
     return SimpleResponse(ok=True, detail=uid)
 
@@ -39,3 +60,18 @@ def create_company(company: CompanyIn):
     payload = {'id': company.id or None, 'name': company.name, 'text': f"company:{company.name}"}
     uid = _store('companies', payload)
     return SimpleResponse(ok=True, detail=uid)
+
+def create_transactions_payload(transactions: list, amount: float, cash_account: str, security: str, units: int) -> list:
+    new_amount = Decimal(amount)
+    if new_amount != Decimal(0):
+        new_amount = new_amount + sum_account(transactions, cash_account)
+    transactions.append({
+        'transaction_date': datetime.now(),
+        'security': security,
+        'units': units,
+        'price_per_unit': None,
+        'amount': new_amount,
+        'cash_account': cash_account,
+        'offset_account': None,
+    })
+    return transactions
